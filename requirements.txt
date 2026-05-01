@@ -1,0 +1,12 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+betfairlightweight[speed]==2.21.0
+google-cloud-storage==2.19.0
+google-cloud-secret-manager==2.21.1
+pydantic==2.10.4
+pydantic-settings==2.7.0
+python-json-logger==3.2.1
+sse-starlette==2.2.1
+openpyxl==3.1.5
+pyarrow==18.1.0
+httpx==0.28.1

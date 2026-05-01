@@ -1,0 +1,64 @@
+{
+  "name": "mark_4rule_lay_v1",
+  "version": "1.0.0",
+  "description": "Mark's proven 4-rule lay set: lay favourites in defined odds bands, with optional JOFS splitting and a companion lay on the 2nd favourite when the spread between 1st and 2nd is small.",
+  "source": {
+    "type": "gcs",
+    "bucket": "gs://betfair-basic-historic/ADVANCED/",
+    "date_range": {
+      "start": "2025-01-01",
+      "end": "2025-01-31"
+    },
+    "filters": {
+      "countries": ["GB", "IE"],
+      "market_types": ["WIN"],
+      "sport": "Horse Racing",
+      "plan": "Basic Plan",
+      "file_types": ["M"]
+    }
+  },
+  "parser": {
+    "format": "betfair_mcm",
+    "time_before_off_seconds": 300,
+    "price_field": "ltp",
+    "extract_bsp": true
+  },
+  "strategy": {
+    "rules": [
+      {
+        "name": "rule_1",
+        "odds_band": [1.50, 2.00],
+        "base_stake": 3
+      },
+      {
+        "name": "rule_2",
+        "odds_band": [2.00, 5.00],
+        "base_stake": 2
+      },
+      {
+        "name": "rule_3a",
+        "odds_band": [5.00, 8.00],
+        "gap_lt": 2.0,
+        "stake": 1,
+        "also_lay_2nd": true
+      },
+      {
+        "name": "rule_3b",
+        "odds_band": [5.00, 8.00],
+        "gap_gte": 2.0,
+        "stake": 1
+      }
+    ],
+    "controls": {
+      "hard_floor": 1.50,
+      "hard_ceiling": 8.00,
+      "jofs_enabled": true,
+      "jofs_spread": 0.20,
+      "mark_uplift": 2.0,
+      "spread_control": true
+    }
+  },
+  "staking": {
+    "point_value": 7.50
+  }
+}
