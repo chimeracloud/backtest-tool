@@ -78,6 +78,16 @@ class AppSettings(BaseSettings):
         le=1000,
         description="Maximum number of activity events held in memory.",
     )
+    cors_allowed_origins: list[str] = Field(
+        default_factory=lambda: [
+            "https://chimerasportstrading.com",
+            "https://www.chimerasportstrading.com",
+        ],
+        description=(
+            "Origins permitted to issue cross-origin requests against the API. "
+            "Set CHIMERA_CORS_ALLOWED_ORIGINS to a JSON array to override."
+        ),
+    )
 
 
 @lru_cache(maxsize=1)

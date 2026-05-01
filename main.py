@@ -34,6 +34,7 @@ from fastapi import (
     Query,
     Response,
 )
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ValidationError
 from sse_starlette.sse import EventSourceResponse
@@ -117,6 +118,14 @@ app = FastAPI(
         "strategy plugin config and receive per-market results with P&L."
     ),
     lifespan=_lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_settings().cors_allowed_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+    allow_headers=["*"],
 )
 
 
