@@ -1,0 +1,151 @@
+{
+  "name": "chimera_may2026_v1",
+  "version": "1.1.0",
+  "description": "Chimera full ruleset — May 2026. Rule 2 split into 3 sub-bands. All controls granular. Per-variable _meta blocks declare bounds + defaults for live tuning on the Lay Engine front page.",
+  "author": "Mark Insley",
+  "sport": "horse_racing",
+  "compatible_tools": ["backtest-tool", "fsu100-betting-engine"],
+
+  "source": {
+    "type": "gcs",
+    "bucket": "gs://betfair-basic-historic/ADVANCED/",
+    "date_range": { "start": "2026-01-01", "end": "2026-04-30" },
+    "filters": {
+      "countries": ["GB", "IE"],
+      "market_types": ["WIN"]
+    }
+  },
+
+  "parser": {
+    "format": "betfair_mcm",
+    "time_before_off_seconds": 300,
+    "price_field": "ltp",
+    "extract_bsp": true
+  },
+
+  "strategy": {
+    "rules": [
+      {
+        "name": "rule_1",
+        "description": "Lay short-priced favourite. Sub-2.0 implies >50% win chance.",
+        "odds_band": [1.01, 2.00],
+        "base_stake": 3.0,
+        "enabled": true,
+        "_meta": {
+          "base_stake": { "min": 0, "max": 10, "step": 0.5, "default": 3.0 }
+        }
+      },
+      {
+        "name": "rule_2a",
+        "description": "Lay mid-range favourite — lower sub-band. 0 = SKIP this band (currently bleeds).",
+        "odds_band": [2.00, 3.00],
+        "base_stake": 0,
+        "enabled": true,
+        "_meta": {
+          "base_stake": { "min": 0, "max": 5, "step": 0.5, "default": 0 }
+        }
+      },
+      {
+        "name": "rule_2b",
+        "description": "Lay mid-range favourite — middle sub-band.",
+        "odds_band": [3.00, 4.00],
+        "base_stake": 1,
+        "enabled": true,
+        "_meta": {
+          "base_stake": { "min": 0, "max": 5, "step": 0.5, "default": 1 }
+        }
+      },
+      {
+        "name": "rule_2c",
+        "description": "Lay mid-range favourite — upper sub-band.",
+        "odds_band": [4.00, 5.00],
+        "base_stake": 2,
+        "enabled": true,
+        "_meta": {
+          "base_stake": { "min": 0, "max": 5, "step": 0.5, "default": 2 }
+        }
+      },
+      {
+        "name": "rule_3a",
+        "description": "Lay both favourite and 2nd fav when closely matched longshots. Gap < threshold.",
+        "odds_band": [5.00, 1000.00],
+        "gap_lt": 2.0,
+        "base_stake": 1.0,
+        "also_lay_2nd": true,
+        "enabled": true,
+        "_meta": {
+          "base_stake": { "min": 0, "max": 5, "step": 0.5, "default": 1.0 },
+          "gap_lt":     { "min": 0.5, "max": 5, "step": 0.1, "default": 2.0 }
+        }
+      },
+      {
+        "name": "rule_3b",
+        "description": "Lay favourite only when longshot and 2nd fav is distant. Gap >= threshold.",
+        "odds_band": [5.00, 1000.00],
+        "gap_gte": 2.0,
+        "base_stake": 1.0,
+        "enabled": true,
+        "_meta": {
+          "base_stake": { "min": 0, "max": 5, "step": 0.5, "default": 1.0 },
+          "gap_gte":    { "min": 0.5, "max": 5, "step": 0.1, "default": 2.0 }
+        }
+      }
+    ],
+
+    "controls": {
+      "jofs_enabled": true,
+      "jofs_spread": 0.20,
+      "spread_control": false,
+      "mark_ceiling_enabled": false,
+      "mark_ceiling": 8.0,
+      "mark_floor_enabled": false,
+      "mark_floor": 1.5,
+      "mark_uplift_enabled": false,
+      "mark_uplift": 2.0,
+      "signal_overround": false,
+      "signal_field_size": false,
+      "signal_steam_gate": false,
+      "signal_band_perf": false,
+      "market_overlay_modifier": false,
+      "top2_concentration_enabled": false,
+      "top2_06_enabled": false,
+      "top2_06_overround": 1.10,
+      "top2_06_fav_ceiling": 3.08,
+      "top2_06_gap_2_3": 1.50,
+      "top2_06_multiplier": 0.60,
+      "top2_07_enabled": false,
+      "top2_07_overround": 1.12,
+      "top2_07_fav_ceiling": 2.50,
+      "top2_07_gap_2_3": 2.50,
+      "top2_07_multiplier": 0.25,
+      "top2_08_enabled": false,
+      "top2_08_overround": 1.15,
+      "top2_08_fav_ceiling": 2.00,
+      "top2_08_gap_2_3": 4.00,
+      "_meta": {
+        "jofs_spread":        { "min": 0,    "max": 1,    "step": 0.05, "default": 0.20 },
+        "mark_ceiling":       { "min": 1.5,  "max": 50,   "step": 0.5,  "default": 8.0 },
+        "mark_floor":         { "min": 1.01, "max": 5,    "step": 0.05, "default": 1.5 },
+        "mark_uplift":        { "min": 1,    "max": 5,    "step": 0.1,  "default": 2.0 },
+        "top2_06_overround":  { "min": 1,    "max": 1.5,  "step": 0.01, "default": 1.10 },
+        "top2_06_fav_ceiling":{ "min": 1.5,  "max": 10,   "step": 0.05, "default": 3.08 },
+        "top2_06_gap_2_3":    { "min": 0,    "max": 10,   "step": 0.1,  "default": 1.50 },
+        "top2_06_multiplier": { "min": 0,    "max": 1,    "step": 0.05, "default": 0.60 },
+        "top2_07_overround":  { "min": 1,    "max": 1.5,  "step": 0.01, "default": 1.12 },
+        "top2_07_fav_ceiling":{ "min": 1.5,  "max": 10,   "step": 0.05, "default": 2.50 },
+        "top2_07_gap_2_3":    { "min": 0,    "max": 10,   "step": 0.1,  "default": 2.50 },
+        "top2_07_multiplier": { "min": 0,    "max": 1,    "step": 0.05, "default": 0.25 },
+        "top2_08_overround":  { "min": 1,    "max": 1.5,  "step": 0.01, "default": 1.15 },
+        "top2_08_fav_ceiling":{ "min": 1.5,  "max": 10,   "step": 0.05, "default": 2.00 },
+        "top2_08_gap_2_3":    { "min": 0,    "max": 10,   "step": 0.1,  "default": 4.00 }
+      }
+    }
+  },
+
+  "staking": {
+    "point_value": 1.0,
+    "_meta": {
+      "point_value": { "min": 0.25, "max": 100, "step": 0.25, "default": 1.0 }
+    }
+  }
+}
