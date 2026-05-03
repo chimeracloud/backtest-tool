@@ -454,6 +454,29 @@ class ActivityResponse(_Strict):
     events: list[ActivityEvent]
 
 
+class CredentialSecretStatus(_Strict):
+    """One required secret's current status. Status only — never values."""
+
+    secret_id: str
+    configured: bool
+    error: str | None = None
+
+
+class CredentialStatusResponse(_Strict):
+    """Body of ``GET /admin/credentials/status``.
+
+    Reports whether the engine's bound credential bundle is fully provisioned
+    in Secret Manager. Identifies the bundle by ``bundle_name`` (per-engine,
+    per-sport) without surfacing any secret values.
+    """
+
+    bundle_name: str
+    project: str
+    configured: bool
+    secrets: list[CredentialSecretStatus]
+    retrieved_at: datetime
+
+
 class ControlAction(str, Enum):
     """Recognised values for /admin/control/{action}."""
 

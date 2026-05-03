@@ -63,6 +63,8 @@ from models.schemas import (
     BacktestSubmission,
     ControlAction,
     ControlResponse,
+    CredentialSecretStatus,
+    CredentialStatusResponse,
     JobRecord,
     JobStatus,
     PluginInfo,
@@ -227,6 +229,43 @@ async def admin_stats(bus: EventBus = Depends(_event_bus_dep)) -> AdminStats:
 
     snapshot = await bus.stats_snapshot()
     return AdminStats(**snapshot)
+
+
+@app.get(
+    "/admin/credentials/status",
+    response_model=CredentialStatusResponse,
+    tags=["admin"],
+    summary="Credential bundle status (no values surfaced).",
+)
+async def admin_credentials_status(
+    settings: AppSettings = Depends(_settings_dep),
+) -> CredentialStatusResponse:
+    """Report whether the backtest tool's Secret Manager bundle is provisioned.
+
+    Status only — secret values are never returned. Surfaces the same shape
+    used by the live engine so the central Credentials Manager (under
+    Administration on the portal) can read both with one client.
+    """
+
+    from services.secrets_service import SecretsService
+
+    service = SecretsService()
+    report = await asyncio.to_thread(service.credential_status)
+    bundle_name = f"betfair-{settings.service_name}-creds"
+    return CredentialStatusResponse(
+        bundle_name=bundle_name,
+        project=str(report.get("project", settings.gcp_project)),
+        configured=bool(report.get("configured", False)),
+        secrets=[
+            CredentialSecretStatus(
+                secret_id=str(s.get("secret_id", "")),
+                configured=bool(s.get("configured", False)),
+                error=(str(s["error"]) if s.get("error") else None),
+            )
+            for s in report.get("secrets", [])
+        ],
+        retrieved_at=datetime.now(timezone.utc),
+    )
 
 
 @app.get(

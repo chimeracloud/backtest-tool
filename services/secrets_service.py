@@ -91,3 +91,60 @@ class SecretsService:
             cert_pem=self._cache["betfair-cert-pem"],
             key_pem=self._cache["betfair-key-pem"],
         )
+
+    def credential_status(
+        self, secret_ids: tuple[str, ...] | None = None
+    ) -> dict[str, "object"]:
+        """Return a status report for the engine's bound credential bundle.
+
+        Status only — secret values are never read into the response. For
+        each required secret we attempt access; the result is reported as
+        ``configured: True | False`` along with the Secret Manager error
+        kind (``not_found`` / ``permission_denied`` / etc) when access
+        fails. The runtime service account requires
+        ``secretmanager.versions.access`` for ``configured: True`` to be
+        reported.
+        """
+
+        targets = secret_ids or self._BETFAIR_SECRETS
+        secrets: list[dict[str, "object"]] = []
+        any_missing = False
+        for secret_id in targets:
+            name = (
+                f"projects/{self._project}/secrets/{secret_id}/versions/latest"
+            )
+            try:
+                self._client.access_secret_version(name=name)
+                secrets.append({"secret_id": secret_id, "configured": True})
+            except NotFound:
+                secrets.append(
+                    {
+                        "secret_id": secret_id,
+                        "configured": False,
+                        "error": "not_found",
+                    }
+                )
+                any_missing = True
+            except PermissionDenied:
+                secrets.append(
+                    {
+                        "secret_id": secret_id,
+                        "configured": False,
+                        "error": "permission_denied",
+                    }
+                )
+                any_missing = True
+            except Exception as exc:  # noqa: BLE001 — surfaced to operator
+                secrets.append(
+                    {
+                        "secret_id": secret_id,
+                        "configured": False,
+                        "error": type(exc).__name__,
+                    }
+                )
+                any_missing = True
+        return {
+            "project": self._project,
+            "configured": not any_missing,
+            "secrets": secrets,
+        }
