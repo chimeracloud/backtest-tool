@@ -158,7 +158,17 @@ class JobStore:
                 continue
             if status is not None and record.status is not status:
                 continue
+            # Prefer the summary mirrored onto the record (survives restarts
+            # when _results is empty); fall back to the in-memory result
+            # document for any old job that hasn't been re-saved with the
+            # mirrored field yet.
             res = results.get(record.job_id)
+            summary = record.summary or (res.summary if res else None)
+            # Date range comes from the request — new shape carries it at
+            # the top level, legacy plugins embed it under plugin.source.
+            req_range = record.request.date_range
+            if req_range is None and record.request.plugin.source is not None:
+                req_range = record.request.plugin.source.date_range
             items.append(
                 ResultListItem(
                     job_id=record.job_id,
@@ -167,10 +177,14 @@ class JobStore:
                     submitted_at=record.submitted_at,
                     finished_at=record.finished_at,
                     source_mode=record.source_mode,
-                    total_markets=res.summary.total_markets if res else None,
-                    total_bets=res.summary.total_bets if res else None,
-                    total_pnl=res.summary.total_pnl if res else None,
-                    roi=res.summary.roi if res else None,
+                    date_range=req_range,
+                    total_markets=summary.total_markets if summary else None,
+                    total_bets=summary.total_bets if summary else None,
+                    bets_won=summary.bets_won if summary else None,
+                    bets_lost=summary.bets_lost if summary else None,
+                    strike_rate=summary.strike_rate if summary else None,
+                    total_pnl=summary.total_pnl if summary else None,
+                    roi=summary.roi if summary else None,
                 )
             )
         total = len(items)

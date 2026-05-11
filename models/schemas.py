@@ -371,6 +371,10 @@ class JobRecord(_Strict):
     progress: JobProgress = Field(default_factory=JobProgress)
     error: str | None = None
     request: BacktestRequest
+    # Populated when the job reaches SUCCEEDED. Mirrored from the full
+    # BacktestResult so the listing endpoint can show summary stats
+    # without rehydrating result.json from GCS on every page load.
+    summary: BacktestSummary | None = None
 
 
 class ResultListItem(_Strict):
@@ -382,8 +386,16 @@ class ResultListItem(_Strict):
     submitted_at: datetime
     finished_at: datetime | None
     source_mode: SourceType
+    # Date range the job ran over. Pulled from request.date_range (new
+    # shape) or request.plugin.source.date_range (legacy inline source).
+    # None when the request omits both — which only happens when the
+    # service-level default is used and the request supplies none.
+    date_range: DateRange | None = None
     total_markets: int | None = None
     total_bets: int | None = None
+    bets_won: int | None = None
+    bets_lost: int | None = None
+    strike_rate: float | None = None
     total_pnl: float | None = None
     roi: float | None = None
 

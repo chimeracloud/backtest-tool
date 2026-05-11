@@ -161,6 +161,9 @@ class BacktestService:
                 await self._jobs.save_result(record.job_id, result)
                 record.status = JobStatus.SUCCEEDED
                 record.finished_at = finished_at
+                # Mirror the summary onto the record so the listing endpoint
+                # can show stats without rehydrating result.json from GCS.
+                record.summary = summary
                 await self._jobs.update(record)
                 await self._events.publish(
                     "job_completed",
