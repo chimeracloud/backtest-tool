@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -38,6 +39,16 @@ class JobStore:
     _STATUS_PREFIX = "jobs/"
     _STATUS_FILENAME = "status.json"
     _RESULT_FILENAME = "result.json"
+    # GCS hard-limits object mutation to roughly 1 write/sec per object.
+    # Progress updates fire once per processed file; with many small files
+    # the rate trips ``429 TooManyRequests`` on ``status.json``. Throttle
+    # in-progress persists to at most one every 2s (terminal states
+    # always persist immediately so the operator never misses a final
+    # state transition).
+    _PROGRESS_PERSIST_INTERVAL_S = 2.0
+    _TERMINAL_STATUSES = frozenset(
+        {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELLED}
+    )
 
     def __init__(self, gcs: GcsService, results_bucket: str) -> None:
         self._gcs = gcs
@@ -45,6 +56,7 @@ class JobStore:
         self._jobs: dict[str, JobRecord] = {}
         self._results: dict[str, BacktestResult] = {}
         self._cancellations: set[str] = set()
+        self._last_persist_at: dict[str, float] = {}
         self._lock = asyncio.Lock()
 
     async def register(self, record: JobRecord) -> None:
@@ -53,13 +65,28 @@ class JobStore:
         async with self._lock:
             self._jobs[record.job_id] = record
         await self._persist_status(record)
+        self._last_persist_at[record.job_id] = time.monotonic()
 
     async def update(self, record: JobRecord) -> None:
-        """Replace the in-memory record and persist it."""
+        """Replace the in-memory record; persist to GCS subject to throttle.
+
+        In-memory state is always refreshed (so HTTP polls and SSE see
+        live values). GCS writes are throttled to ``_PROGRESS_PERSIST_INTERVAL_S``
+        to avoid the per-object ``429 TooManyRequests`` cap; terminal
+        statuses bypass the throttle so the final state is always
+        durable.
+        """
 
         async with self._lock:
             self._jobs[record.job_id] = record
+
+        is_terminal = record.status in self._TERMINAL_STATUSES
+        if not is_terminal:
+            last = self._last_persist_at.get(record.job_id, 0.0)
+            if time.monotonic() - last < self._PROGRESS_PERSIST_INTERVAL_S:
+                return
         await self._persist_status(record)
+        self._last_persist_at[record.job_id] = time.monotonic()
 
     async def get(self, job_id: str) -> JobRecord | None:
         """Return the current record for ``job_id``, if known.
