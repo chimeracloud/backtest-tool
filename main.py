@@ -70,6 +70,7 @@ from models.schemas import (
     PluginInfo,
     PluginSchema,
     ResultListResponse,
+    SourceType,
 )
 from services.backtest_service import BacktestService
 from services.gcs_service import GcsService
@@ -483,15 +484,22 @@ async def submit_backtest(
 
     job_id = make_job_id()
     submitted_at = datetime.now(timezone.utc)
+    # Source can live on plugin.source (legacy), request.source (override),
+    # or fall through to the admin default GCS bucket. Mirror that order
+    # when deciding the source mode tag persisted on the job record.
+    if request.plugin.source is not None:
+        source_payload = request.plugin.source.model_dump(mode="json")
+    elif request.source is not None:
+        source_payload = request.source.model_dump(mode="json")
+    else:
+        source_payload = {"type": SourceType.GCS.value}
     record = JobRecord(
         job_id=job_id,
         status=JobStatus.QUEUED,
         submitted_at=submitted_at,
         plugin=request.plugin.name,
         plugin_version=request.plugin.version,
-        source_mode=determine_source_mode(
-            request.plugin.source.model_dump(mode="json")
-        ),
+        source_mode=determine_source_mode(source_payload),
         request=request,
     )
     await jobs.register(record)

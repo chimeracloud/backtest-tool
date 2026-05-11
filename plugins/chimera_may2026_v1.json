@@ -6,16 +6,6 @@
   "sport": "horse_racing",
   "compatible_tools": ["backtest-tool", "fsu100-betting-engine"],
 
-  "source": {
-    "type": "gcs",
-    "bucket": "gs://betfair-basic-historic/ADVANCED/",
-    "date_range": { "start": "2026-01-01", "end": "2026-04-30" },
-    "filters": {
-      "countries": ["GB", "IE"],
-      "market_types": ["WIN"]
-    }
-  },
-
   "parser": {
     "format": "betfair_mcm",
     "time_before_off_seconds": 300,

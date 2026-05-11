@@ -53,31 +53,41 @@ class GcsService:
         self,
         gcs_uri: str,
         date_range: tuple[date, date],
-        countries: Iterable[str] = (),
-        market_types: Iterable[str] = (),
+        countries: Iterable[str] = (),  # noqa: ARG002 — accepted for API compat, filtered at parse time
+        market_types: Iterable[str] = (),  # noqa: ARG002 — accepted for API compat, filtered at parse time
     ) -> list[str]:
-        """Return blob names that match the supplied filters.
+        """Return ``.bz2`` blob names whose day-prefix falls inside ``date_range``.
 
-        The Betfair-supplied buckets store files in a ``YYYY/MM/DD/...``
-        layout per market, with the last two segments being the country
-        code and the file containing the market type. Filters are applied
-        in-memory after listing because GCS prefix listing cannot express
-        regex predicates.
+        The Betfair-supplied buckets store files in a
+        ``{TIER}/{YYYY}/{MonAbbr}/{D}/{EVENT_ID}/{MARKET_ID}.bz2`` layout
+        — ``MonAbbr`` is a three-letter English month abbreviation
+        (``Jan`` … ``Dec``) and ``D`` is the unpadded day-of-month.
+
+        Country/market-type filters are NOT applied here. The day prefix
+        carries no country segment, and the file name carries no market
+        type — both must be read from each file's market metadata at
+        parse time (see ``evaluator.evaluate`` which already filters on
+        ``filters_country`` / ``filters_market_type`` once the market
+        definition is available).
         """
 
         path = GcsPath.parse(gcs_uri)
         start, end = date_range
-        country_set = {c.upper() for c in countries}
-        type_set = {t.upper() for t in market_types}
 
         blobs: list[str] = []
+        prefixes_tried: list[str] = []
         for day_offset in range((end - start).days + 1):
             current = start.fromordinal(start.toordinal() + day_offset)
+            # ``%b`` is the locale-aware month abbreviation. Cloud Run images
+            # run in the C/POSIX locale so this yields English 3-letter
+            # abbreviations (``Jan`` … ``Dec``) — which is what the bucket
+            # uses. ``current.day`` is unpadded by default (``1`` not ``01``).
             day_prefix = (
                 f"{path.prefix}{current.year}/"
-                f"{current.month:02d}/"
-                f"{current.day:02d}/"
+                f"{current.strftime('%b')}/"
+                f"{current.day}/"
             ).lstrip("/")
+            prefixes_tried.append(day_prefix)
             try:
                 day_blobs = self._client.list_blobs(path.bucket, prefix=day_prefix)
             except (NotFound, PermissionDenied) as exc:
@@ -89,18 +99,25 @@ class GcsService:
                     f"cannot list gs://{path.bucket}/{day_prefix}: {exc}"
                 ) from exc
             for blob in day_blobs:
-                if not blob.name.endswith(".bz2"):
-                    continue
-                if country_set and not _country_matches(blob.name, country_set):
-                    continue
-                if type_set and not _market_type_matches(blob.name, type_set):
-                    continue
-                blobs.append(blob.name)
+                if blob.name.endswith(".bz2"):
+                    blobs.append(blob.name)
 
-        logger.info(
-            "listed historic files",
-            extra={"bucket": path.bucket, "count": len(blobs)},
-        )
+        if not blobs:
+            sample = prefixes_tried[:3] + (["…"] if len(prefixes_tried) > 3 else [])
+            logger.warning(
+                "no historic files matched date range",
+                extra={
+                    "bucket": path.bucket,
+                    "date_range": [start.isoformat(), end.isoformat()],
+                    "prefixes_tried_sample": sample,
+                    "prefix_count": len(prefixes_tried),
+                },
+            )
+        else:
+            logger.info(
+                "listed historic files",
+                extra={"bucket": path.bucket, "count": len(blobs)},
+            )
         return blobs
 
     def download_blob(self, bucket: str, blob_name: str, destination: Path) -> Path:
@@ -168,15 +185,3 @@ class GcsService:
             ) from exc
 
 
-def _country_matches(blob_name: str, countries: set[str]) -> bool:
-    """True if any country code segment of ``blob_name`` is in ``countries``."""
-
-    upper = blob_name.upper()
-    return any(f"/{c}/" in upper or upper.endswith(f"/{c}") for c in countries)
-
-
-def _market_type_matches(blob_name: str, market_types: set[str]) -> bool:
-    """True if the blob name mentions one of the requested market types."""
-
-    upper = blob_name.upper()
-    return any(t in upper for t in market_types)

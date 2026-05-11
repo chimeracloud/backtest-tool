@@ -53,8 +53,15 @@ class AppSettings(BaseSettings):
         description="GCS bucket where job state and results are persisted.",
     )
     default_source_bucket: str = Field(
-        default="gs://betfair-basic-historic/",
-        description="Default GCS source bucket for historic .bz2 files.",
+        default="gs://betfair-basic-historic/BASIC/",
+        description=(
+            "Default GCS source bucket + prefix for historic .bz2 files. "
+            "The bucket has three tiers (BASIC, ADVANCED, PRO); recent "
+            "years (2022-2026) only live under BASIC, so we point at that "
+            "by default. Operators can override per-deployment via "
+            "CHIMERA_DEFAULT_SOURCE_BUCKET or at runtime via the Backtest "
+            "settings tab in the portal."
+        ),
     )
 
     plugins_dir: Path = Field(

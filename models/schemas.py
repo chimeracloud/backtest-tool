@@ -223,19 +223,23 @@ class StakingConfig(_Strict):
 
 
 class PluginConfig(_Strict):
-    """Full plugin payload received with each backtest request.
+    """Plugin payload received with each backtest request.
 
-    A plugin is the complete instruction set for one backtest run: where
-    to read data from (``source``), how to parse it (``parser``), what to
-    do with it (``strategy``), and how to stake (``staking``). Saved
-    plugin files in ``plugins/`` are templates the portal loads as
-    defaults; every field is overridable at request time.
+    A plugin describes the strategy: how to parse market updates, what to
+    do with them, and how to stake. Source location (GCS bucket or
+    Betfair Historic API) is intentionally NOT a plugin concern — it is
+    a runtime choice carried on the :class:`BacktestRequest` (or, when
+    unset there, resolved from the service-level admin config).
+
+    ``source`` is accepted for backward compatibility with older plugin
+    JSON files that pinned a bucket inline. When present it is honoured;
+    otherwise the request-level source applies.
     """
 
     name: str
     version: str
     description: str | None = None
-    source: SourceConfig
+    source: SourceConfig | None = None
     parser: ParserConfig = Field(default_factory=ParserConfig)
     strategy: StrategyConfig
     staking: StakingConfig = Field(default_factory=StakingConfig)
@@ -244,11 +248,38 @@ class PluginConfig(_Strict):
 class BacktestRequest(_Strict):
     """Body of POST /api/backtest.
 
-    The plugin block is the only payload — there is no separate source or
-    parser top-level field. The plugin drives the entire pipeline.
+    Source resolution order (first wins):
+
+    1. ``plugin.source`` (legacy inline source; deprecated for new plugins)
+    2. This request's ``source`` (explicit override)
+    3. The service-level default GCS bucket from :class:`AdminConfig`,
+       combined with this request's ``date_range`` and ``filters``.
     """
 
     plugin: PluginConfig
+    date_range: DateRange | None = Field(
+        default=None,
+        description=(
+            "Date window for the backtest. Required unless plugin.source "
+            "or this request's source already carries a date_range."
+        ),
+    )
+    filters: SourceFilters | None = Field(
+        default=None,
+        description=(
+            "Filters (countries, market_types, sport, plan, file_types) "
+            "applied to the chosen source. If absent, defaults to an empty "
+            "filter set (i.e. include everything)."
+        ),
+    )
+    source: SourceConfig | None = Field(
+        default=None,
+        description=(
+            "Optional explicit source override at request time. If neither "
+            "this nor plugin.source is supplied, a GCS source is built from "
+            "the admin default_source_bucket."
+        ),
+    )
 
 
 class BacktestSubmission(_Strict):

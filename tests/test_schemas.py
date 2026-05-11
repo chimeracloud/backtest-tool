@@ -130,3 +130,68 @@ def test_strategy_controls_accept_unknown_fields() -> None:
     )
     assert controls.hard_floor == 1.5
     assert getattr(controls, "magic_factor", None) == 1.5
+
+
+def test_request_without_plugin_source_uses_top_level_date_range() -> None:
+    """New shape: plugin omits source; date_range + filters travel on the request."""
+
+    payload = {
+        "plugin": {
+            "name": "mark_4rule_lay_v1",
+            "version": "1.0.0",
+            "parser": {
+                "format": "betfair_mcm",
+                "time_before_off_seconds": 300,
+                "price_field": "ltp",
+                "extract_bsp": True,
+            },
+            "strategy": {
+                "rules": [
+                    {"name": "rule_1", "odds_band": [1.5, 2.0], "base_stake": 3}
+                ],
+                "controls": {"hard_floor": 1.5, "hard_ceiling": 8.0},
+            },
+            "staking": {"point_value": 7.5},
+        },
+        "date_range": {"start": "2026-01-01", "end": "2026-01-31"},
+        "filters": {"countries": ["GB", "IE"], "market_types": ["WIN"]},
+    }
+    request = BacktestRequest.model_validate(payload)
+    assert request.plugin.source is None
+    assert request.date_range is not None
+    assert request.date_range.start.isoformat() == "2026-01-01"
+    assert request.filters is not None
+    assert request.filters.countries == ["GB", "IE"]
+
+
+def test_request_with_only_plugin_block_is_accepted() -> None:
+    """Plugin source / request date_range are both optional at the schema level.
+
+    The service layer raises a ValueError when neither is present (see
+    BacktestService._resolve_source); that's a runtime contract, not a
+    schema-level one, so the schema accepts the bare plugin payload.
+    """
+
+    payload = {
+        "plugin": {
+            "name": "mark_4rule_lay_v1",
+            "version": "1.0.0",
+            "parser": {
+                "format": "betfair_mcm",
+                "time_before_off_seconds": 300,
+                "price_field": "ltp",
+                "extract_bsp": True,
+            },
+            "strategy": {
+                "rules": [
+                    {"name": "rule_1", "odds_band": [1.5, 2.0], "base_stake": 3}
+                ],
+                "controls": {"hard_floor": 1.5, "hard_ceiling": 8.0},
+            },
+            "staking": {"point_value": 7.5},
+        },
+    }
+    request = BacktestRequest.model_validate(payload)
+    assert request.plugin.source is None
+    assert request.date_range is None
+    assert request.source is None

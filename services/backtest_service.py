@@ -41,11 +41,13 @@ from models.schemas import (
     BacktestResult,
     BacktestSummary,
     BetfairHistoricSourceConfig,
+    DateRange,
     GcsSourceConfig,
     JobProgress,
     JobRecord,
     JobStatus,
     MarketResult,
+    SourceFilters,
     SourceType,
 )
 from services.gcs_service import GcsPath, GcsService
@@ -216,16 +218,48 @@ class BacktestService:
     ) -> list[Path]:
         """Return local paths to every source file that should be processed.
 
-        The source is read from the plugin block — the plugin is the
-        complete instruction set and decides where data comes from.
+        Source is resolved at this point — see :meth:`_resolve_source` for
+        the precedence rules. The plugin no longer mandates a source; if
+        the request omits one, the admin-configured default GCS bucket is
+        used.
         """
 
-        source = record.request.plugin.source
+        source = self._resolve_source(record.request)
         if isinstance(source, GcsSourceConfig):
             return await self._download_from_gcs(source, work_dir)
         if isinstance(source, BetfairHistoricSourceConfig):
             return await self._download_from_betfair(source, work_dir)
         raise TypeError(f"unsupported source type: {type(source).__name__}")
+
+    def _resolve_source(self, request: BacktestRequest) -> GcsSourceConfig | BetfairHistoricSourceConfig:
+        """Resolve the effective source for a job.
+
+        Precedence (first non-null wins):
+
+        1. ``request.plugin.source`` — legacy inline source on the plugin.
+        2. ``request.source`` — explicit per-request source override.
+        3. A :class:`GcsSourceConfig` assembled from the admin default
+           bucket plus this request's ``date_range`` and ``filters``.
+        """
+
+        if request.plugin.source is not None:
+            return request.plugin.source
+        if request.source is not None:
+            return request.source
+        if request.date_range is None:
+            raise ValueError(
+                "no source supplied: either provide plugin.source, request.source, "
+                "or request.date_range so a GCS source can be built from the admin "
+                "default bucket"
+            )
+        from core.config import get_settings  # local import to avoid cycles at module load
+
+        bucket = get_settings().default_source_bucket
+        return GcsSourceConfig(
+            bucket=bucket,
+            date_range=request.date_range,
+            filters=request.filters or SourceFilters(),
+        )
 
     async def _download_from_gcs(
         self, source: GcsSourceConfig, work_dir: Path
@@ -337,12 +371,16 @@ class BacktestService:
                     evaluation_done.add(market_id)
                     continue
 
+                # Filters come from the resolved source — see _resolve_source.
+                # Idempotent re-resolution avoids threading the source through
+                # _process_file's worker-thread boundary.
+                resolved = self._resolve_source(request)
                 results = evaluate(
                     market_book,
                     plugin.strategy,
                     point_value=plugin.staking.point_value,
-                    filters_country=plugin.source.filters.countries,
-                    filters_market_type=plugin.source.filters.market_types,
+                    filters_country=resolved.filters.countries,
+                    filters_market_type=resolved.filters.market_types,
                 )
                 bets = [r for r in results if isinstance(r, BetDecision)]
                 if bets:
