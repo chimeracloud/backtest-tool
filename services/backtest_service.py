@@ -335,7 +335,16 @@ class BacktestService:
         """Run the betfairlightweight generator over a single market file."""
 
         listener = StreamListener(max_latency=None)
-        trading = betfairlightweight.APIClient("backtest", "backtest")
+        # betfairlightweight's APIClient constructor requires an app_key
+        # even when we only ever use it to construct an offline historical
+        # generator from a local .bz2 file — without one it falls back to
+        # reading ~/.bashprofile and raises AppKeyError. Pass a sentinel
+        # string; it's never sent over the network for historical replay.
+        trading = betfairlightweight.APIClient(
+            username="backtest",
+            password="backtest",
+            app_key="offline",
+        )
         stream = trading.streaming.create_historical_generator_stream(
             file_path=str(stream_path),
             listener=listener,
