@@ -96,17 +96,18 @@ class BacktestService:
         markets_processed = 0
         bets_recorded = 0
         try:
-            local_files = await self._materialise_sources(record, work_root)
-            if not local_files:
+            file_items, gcs_bucket = await self._plan_sources(record, work_root)
+            if not file_items:
                 raise RuntimeError(
                     "no files matched the supplied source configuration"
                 )
 
-            record.progress.files_total = len(local_files)
+            total = len(file_items)
+            record.progress.files_total = total
             await self._jobs.update(record)
 
             market_rows: list[MarketResult] = []
-            for file_idx, local_file in enumerate(local_files, start=1):
+            for file_idx, item in enumerate(file_items, start=1):
                 if await self._jobs.is_cancelled(record.job_id):
                     record.status = JobStatus.CANCELLED
                     await self._events.publish(
@@ -117,6 +118,17 @@ class BacktestService:
                     )
                     break
 
+                # GCS mode: download just this one file. Betfair Historic
+                # mode pre-downloaded everything, so the item is already a
+                # local Path.
+                if gcs_bucket is not None:
+                    local_file = work_root / Path(item).name
+                    await asyncio.to_thread(
+                        self._gcs.download_blob, gcs_bucket, item, local_file
+                    )
+                else:
+                    local_file = item  # type: ignore[assignment]
+
                 file_rows = await asyncio.to_thread(
                     self._process_file, local_file, record.request
                 )
@@ -126,19 +138,19 @@ class BacktestService:
                 bets_recorded += sum(1 for r in file_rows if r.outcome != "VOID")
 
                 record.progress = JobProgress(
-                    files_total=len(local_files),
+                    files_total=total,
                     files_processed=file_idx,
                     markets_total=markets_processed,
                     markets_processed=markets_processed,
                     bets_recorded=bets_recorded,
-                    percentage=round(file_idx * 100.0 / len(local_files), 2),
+                    percentage=round(file_idx * 100.0 / total, 2),
                 )
                 await self._jobs.update(record)
                 await self._events.publish(
                     "job_progress",
                     record.progress.model_dump(),
                     job_id=record.job_id,
-                    detail=f"processed {file_idx}/{len(local_files)} files",
+                    detail=f"processed {file_idx}/{total} files",
                 )
 
             if record.status is not JobStatus.CANCELLED:
@@ -216,22 +228,39 @@ class BacktestService:
         finally:
             shutil.rmtree(work_root, ignore_errors=True)
 
-    async def _materialise_sources(
+    async def _plan_sources(
         self, record: JobRecord, work_dir: Path
-    ) -> list[Path]:
-        """Return local paths to every source file that should be processed.
+    ) -> tuple[list[str | Path], str | None]:
+        """Build the per-file work list without eagerly downloading.
 
-        Source is resolved at this point — see :meth:`_resolve_source` for
-        the precedence rules. The plugin no longer mandates a source; if
-        the request omits one, the admin-configured default GCS bucket is
-        used.
+        GCS mode returns ``(blob_names, bucket)`` so :meth:`run` can fetch
+        each file individually, process it, and delete it before moving
+        on. Eagerly downloading the whole month into Cloud Run's tmpfs
+        ``/tmp`` exhausts the container's memory budget (a single month
+        of GB+IE racing is ~3.5k files / ~540MB compressed, considerably
+        more decompressed).
+
+        Betfair Historic API mode still uses the eager download flow
+        because :class:`HistoricDataService.download_files` is a
+        synchronous batch call provided by ``betfairlightweight``;
+        returning ``(local_paths, None)`` signals the caller to skip the
+        per-file GCS download step.
         """
 
         source = self._resolve_source(record.request)
         if isinstance(source, GcsSourceConfig):
-            return await self._download_from_gcs(source, work_dir)
+            path = GcsPath.parse(source.bucket)
+            blobs = await asyncio.to_thread(
+                self._gcs.list_historic_files,
+                source.bucket,
+                (source.date_range.start, source.date_range.end),
+                source.filters.countries,
+                source.filters.market_types,
+            )
+            return list(blobs), path.bucket
         if isinstance(source, BetfairHistoricSourceConfig):
-            return await self._download_from_betfair(source, work_dir)
+            locals_list = await self._download_from_betfair(source, work_dir)
+            return list(locals_list), None
         raise TypeError(f"unsupported source type: {type(source).__name__}")
 
     def _resolve_source(self, request: BacktestRequest) -> GcsSourceConfig | BetfairHistoricSourceConfig:
@@ -264,23 +293,6 @@ class BacktestService:
             filters=request.filters or SourceFilters(),
         )
 
-    async def _download_from_gcs(
-        self, source: GcsSourceConfig, work_dir: Path
-    ) -> list[Path]:
-        path = GcsPath.parse(source.bucket)
-        blobs = await asyncio.to_thread(
-            self._gcs.list_historic_files,
-            source.bucket,
-            (source.date_range.start, source.date_range.end),
-            source.filters.countries,
-            source.filters.market_types,
-        )
-        local_files: list[Path] = []
-        for blob_name in blobs:
-            local = work_dir / Path(blob_name).name
-            await asyncio.to_thread(self._gcs.download_blob, path.bucket, blob_name, local)
-            local_files.append(local)
-        return local_files
 
     async def _download_from_betfair(
         self, source: BetfairHistoricSourceConfig, work_dir: Path
