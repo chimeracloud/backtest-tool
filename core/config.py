@@ -53,12 +53,13 @@ class AppSettings(BaseSettings):
         description="GCS bucket where job state and results are persisted.",
     )
     default_source_bucket: str = Field(
-        default="gs://betfair-basic-historic/BASIC/",
+        default="gs://betfair-historic-adv/ADVANCED/",
         description=(
             "Default GCS source bucket + prefix for historic .bz2 files. "
-            "The bucket has three tiers (BASIC, ADVANCED, PRO); recent "
-            "years (2022-2026) only live under BASIC, so we point at that "
-            "by default. Operators can override per-deployment via "
+            "betfair-historic-adv is the canonical bucket (2024-2026, all "
+            "months populated, every day under each month). Layout: "
+            "{TIER}/{YYYY}/{MonAbbr}/{D}/{event_id}/{market_id}.bz2. "
+            "Operators can override per-deployment via "
             "CHIMERA_DEFAULT_SOURCE_BUCKET or at runtime via the Backtest "
             "settings tab in the portal."
         ),
