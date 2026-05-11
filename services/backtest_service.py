@@ -357,6 +357,13 @@ class BacktestService:
         plugin = request.plugin
         threshold = timedelta(seconds=plugin.parser.time_before_off_seconds)
 
+        # Filters and date_range come from the resolved source — see
+        # _resolve_source. Hoist the resolution out of the inner loop so
+        # we don't recompute on every market book.
+        resolved = self._resolve_source(request)
+        range_start = resolved.date_range.start
+        range_end   = resolved.date_range.end
+
         decisions_by_market: dict[str, list[BetDecision]] = {}
         evaluation_done: set[str] = set()
         last_books: dict[str, Any] = {}
@@ -372,6 +379,16 @@ class BacktestService:
                 md = getattr(market_book, "market_definition", None)
                 if md is None or md.market_time is None:
                     continue
+                # Drop markets whose actual race date falls outside the
+                # requested window. The bucket folder layout doesn't
+                # strictly correspond to race dates — Betfair sometimes
+                # buckets several days of data into one upload-date
+                # folder — so we have to filter against the genuine
+                # market_time from the parsed market_definition.
+                race_date = md.market_time.date()
+                if race_date < range_start or race_date > range_end:
+                    evaluation_done.add(market_id)
+                    continue
                 publish_time = market_book.publish_time
                 if publish_time is None:
                     continue
@@ -383,10 +400,6 @@ class BacktestService:
                     evaluation_done.add(market_id)
                     continue
 
-                # Filters come from the resolved source — see _resolve_source.
-                # Idempotent re-resolution avoids threading the source through
-                # _process_file's worker-thread boundary.
-                resolved = self._resolve_source(request)
                 results = evaluate(
                     market_book,
                     plugin.strategy,
@@ -394,6 +407,7 @@ class BacktestService:
                     filters_country=resolved.filters.countries,
                     filters_market_type=resolved.filters.market_types,
                 )
+
                 bets = [r for r in results if isinstance(r, BetDecision)]
                 if bets:
                     decisions_by_market[market_id] = bets
@@ -489,6 +503,7 @@ def _settle(
 
     return MarketResult(
         market_id=market_book.market_id,
+        market_name=getattr(md, "name", None),
         race_time=md.market_time,
         venue=md.venue,
         country=md.country_code,

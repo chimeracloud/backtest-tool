@@ -321,6 +321,9 @@ class MarketResult(_Strict):
     """Per-market detail row included in the full result document."""
 
     market_id: str
+    # Betfair-supplied market name (e.g. "16:30 R1 1m Hcap") so the
+    # portal can show something meaningful next to the market id.
+    market_name: str | None = None
     race_time: datetime
     venue: str | None = None
     country: str | None = None
