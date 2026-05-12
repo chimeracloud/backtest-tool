@@ -1,0 +1,99 @@
+{
+  "name": "meeting_streak_dampener_v1",
+  "version": "1.0.0",
+  "description": "When the first two races at a meeting are both won by the pre-off favourite, dampen stake on every remaining race at that meeting by 0.75x. Runs last as a sizing modifier so it composes cleanly on top of any rule plugin and any control / guardrail plugin already active.",
+  "author": "Mark Insley",
+  "sport": "horse_racing",
+  "plugin_role": "modifier",
+  "compatible_tools": ["backtest-tool", "fsu100-betting-engine"],
+
+  "parser": {
+    "format": "betfair_mcm",
+    "time_before_off_seconds": 300,
+    "price_field": "ltp",
+    "extract_bsp": true
+  },
+
+  "strategy": {
+    "rules": [
+      { "name": "noop_passthrough", "odds_band": [1.01, 1000.0], "base_stake": 0, "enabled": false }
+    ],
+
+    "controls": {
+      "hard_floor": 1.01,
+      "hard_ceiling": 1000.0
+    },
+
+    "modifier_logic": {
+      "priority": 999,
+      "run_position": "last",
+      "_run_position_note": "Sizing modifiers run AFTER all rule plugins have produced bets and AFTER all control/guardrail plugins have gated them. This plugin multiplies the surviving stake — it never adds, removes, or re-enables a bet.",
+
+      "scope": {
+        "applies_to": "every_surviving_bet_decision_for_remaining_races_in_the_meeting",
+        "creates_new_bets": false,
+        "produces_signals": false,
+        "modifies_sizing_only": true,
+        "never_re_enable_upstream_blocked_bets": true
+      },
+
+      "meeting_session": {
+        "_definition": "A meeting is all WIN markets sharing the same Betfair market_definition.venue, on the same race date (UK local), ordered by market_time ascending.",
+        "venue_field": "market_definition.venue",
+        "race_date_field": "market_time (date component, UK local)",
+        "race_order_field": "market_time",
+        "min_races_observed_before_arming": 2,
+        "track_settlement_via": "winner_selection_id on market close"
+      },
+
+      "trigger_condition": {
+        "_description": "Fires once the first two consecutive races at this meeting have both settled with the pre-off favourite as the winning runner. Once armed, applies to every remaining race at this meeting until the meeting ends.",
+        "all_of": [
+          { "metric": "meeting.race_index_completed",         "operator": ">=", "value": 2 },
+          { "metric": "meeting.race_1_winner_was_favourite",  "operator": "=",  "value": true },
+          { "metric": "meeting.race_2_winner_was_favourite",  "operator": "=",  "value": true }
+        ],
+        "_favourite_definition": "The runner with the lowest exchange best_back price at evaluation time (time_before_off_seconds before that race's off)."
+      },
+
+      "effects": {
+        "stake_multiplier": 0.75,
+        "stake_multiplier_acceptable_range": [0.70, 0.75],
+        "_stake_multiplier_acceptable_range_note": "Mark approved any value in [0.70, 0.75]. 0.75 is the default; the acceptable range is preserved so a future calibration sweep can sweep within it.",
+        "applies_to_races": "all_remaining_races_in_meeting",
+        "applies_to_plugins": "all_upstream_rule_and_control_plugin_decisions",
+        "execution_mode": "post_decision_size_adjust",
+        "reason_code": "MEETING_FAV_STREAK_DAMPEN"
+      },
+
+      "reset": {
+        "boundary": "end_of_meeting_session",
+        "secondary_boundary": "midnight_local_uk",
+        "rearm_after_reset": true,
+        "_rearm_note": "Each fresh meeting starts disarmed. A meeting that runs past midnight is rare for UK racing but if it happens the dampener re-arms at 00:00."
+      },
+
+      "audit_log_fields": [
+        "market_id",
+        "venue",
+        "race_date",
+        "race_index_in_meeting",
+        "race_1_market_id",
+        "race_1_winner_selection_id",
+        "race_1_winner_was_favourite",
+        "race_2_market_id",
+        "race_2_winner_selection_id",
+        "race_2_winner_was_favourite",
+        "armed",
+        "stake_before_modifier",
+        "stake_after_modifier",
+        "stake_multiplier_applied",
+        "reason_code"
+      ]
+    }
+  },
+
+  "staking": {
+    "point_value": 1.0
+  }
+}
