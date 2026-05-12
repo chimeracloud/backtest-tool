@@ -1,0 +1,123 @@
+{
+  "name": "cluster_concentration_v1",
+  "version": "1.0.0",
+  "description": "Multi-runner cluster detection and suppression. Identifies markets where 3-5 runners are tightly grouped as joint/near-joint favourites and shifts from favourite-based logic to cluster-based logic.",
+  "author": "Mark Insley",
+  "sport": "horse_racing",
+  "compatible_tools": ["backtest-tool", "fsu100-betting-engine"],
+
+  "parser": {
+    "format": "betfair_mcm",
+    "time_before_off_seconds": 300,
+    "price_field": "ltp",
+    "extract_bsp": true
+  },
+
+  "strategy": {
+    "cluster_detection": {
+      "CLUSTER_01_DETECTION": {
+        "enabled": true,
+        "description": "Detect top-N runner concentration via price spread or combined probability",
+        "top_n": 4,
+        "max_price_top_n": 6.0,
+        "max_spread_within_cluster": 0.6,
+        "min_combined_probability": 0.70,
+        "method": "probability"
+      },
+
+      "CLUSTER_02_GAP_CONFIRMATION": {
+        "enabled": true,
+        "description": "Confirm cluster by checking gap between last cluster runner and next outsider",
+        "gap_multiplier": 2.0,
+        "note": "price_5th >= 2 x price_4th confirms strong cluster"
+      },
+
+      "CLUSTER_CLASSIFICATION": {
+        "type_a_soft": {
+          "combined_probability_range": [0.65, 0.70],
+          "gap_to_rest": "small",
+          "risk_level": "moderate"
+        },
+        "type_b_strong": {
+          "combined_probability_range": [0.70, 0.80],
+          "gap_to_rest": "large",
+          "risk_level": "high"
+        },
+        "type_c_extreme": {
+          "combined_probability_min": 0.80,
+          "gap_to_rest": "very_large",
+          "risk_level": "critical"
+        }
+      }
+    },
+
+    "cluster_rules": {
+      "CLUSTER_03_PRIMARY_RULE": {
+        "enabled": true,
+        "description": "If top 4 combined probability >= threshold AND gap confirmed, set cluster state",
+        "condition": {
+          "top4_combined_probability_gte": 0.72,
+          "gap_5th_gte_multiplier": 2.0
+        },
+        "result": "cluster_state = STRONG"
+      },
+
+      "CLUSTER_04_ACTION": {
+        "enabled": true,
+        "description": "Action when strong cluster detected",
+        "when_cluster_strong": {
+          "primary_action": "no_bet",
+          "alternative_action": {
+            "enabled": false,
+            "lay_multiplier": 0.25,
+            "max_runners_laid": 1,
+            "note": "Set primary_action to 'suppress' and enable this to lay 1 runner at 25% stake instead of skipping"
+          }
+        }
+      },
+
+      "CLUSTER_05_OVERRIDE_BLOCK": {
+        "enabled": true,
+        "description": "When cluster is active, disable these controls to prevent dangerous exposure",
+        "disable_jofs": true,
+        "disable_also_lay_2nd": true,
+        "disable_multi_runner_lays": true
+      }
+    },
+
+    "rules": [
+      { "name": "rule_1",  "odds_band": [1.50, 2.00], "base_stake": 3, "enabled": true },
+      { "name": "rule_2a", "odds_band": [2.00, 3.00], "base_stake": 0, "enabled": true },
+      { "name": "rule_2b", "odds_band": [3.00, 4.00], "base_stake": 1, "enabled": true },
+      { "name": "rule_2c", "odds_band": [4.00, 5.00], "base_stake": 2, "enabled": true },
+      { "name": "rule_3a", "odds_band": [5.00, 8.00], "gap_lt": 2.0,  "base_stake": 1, "also_lay_2nd": true, "enabled": true },
+      { "name": "rule_3b", "odds_band": [5.00, 8.00], "gap_gte": 2.0, "base_stake": 1, "enabled": true }
+    ],
+
+    "controls": {
+      "hard_floor": 1.50,
+      "hard_ceiling": 8.00,
+      "jofs_enabled": true,
+      "jofs_spread": 0.20,
+      "spread_control": false,
+      "mark_uplift": 1.0
+    },
+
+    "logging": {
+      "track_cluster_metrics": true,
+      "log_fields": [
+        "runners_within_10pct_band",
+        "top3_combined_probability",
+        "top4_combined_probability",
+        "gap_to_5th",
+        "winning_rank",
+        "exposure_vs_cluster",
+        "cluster_type_classified"
+      ]
+    }
+  },
+
+  "staking": {
+    "point_value": 7.50
+  }
+}

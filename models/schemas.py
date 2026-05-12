@@ -205,8 +205,22 @@ class StrategyControls(BaseModel):
         return self
 
 
-class StrategyConfig(_Strict):
-    """The decisive part of a plugin: what to bet and when."""
+class StrategyConfig(BaseModel):
+    """The decisive part of a plugin: what to bet and when.
+
+    ``extra="allow"`` lets plugins carry sport-specific or experimental
+    blocks alongside the standard ``rules`` / ``controls`` pair —
+    e.g. ``cluster_detection`` / ``cluster_rules`` / ``logging`` on the
+    horse-racing concentration plugin. The evaluator only reads
+    ``rules`` and ``controls``; other blocks are pass-through metadata
+    for plugins that implement bespoke logic.
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+        str_strip_whitespace=True,
+        populate_by_name=True,
+    )
 
     rules: list[StrategyRule] = Field(..., min_length=1)
     controls: StrategyControls = Field(default_factory=StrategyControls)
@@ -222,7 +236,7 @@ class StakingConfig(_Strict):
     )
 
 
-class PluginConfig(_Strict):
+class PluginConfig(BaseModel):
     """Plugin payload received with each backtest request.
 
     A plugin describes the strategy: how to parse market updates, what to
@@ -234,7 +248,19 @@ class PluginConfig(_Strict):
     ``source`` is accepted for backward compatibility with older plugin
     JSON files that pinned a bucket inline. When present it is honoured;
     otherwise the request-level source applies.
+
+    ``extra="allow"`` so authoring-only metadata (``author``, ``sport``,
+    ``compatible_tools``, …) is accepted at the top level — the
+    backtest engine ignores those fields but they're useful for the
+    Strategy page and cross-tool plugin compatibility (matches the
+    fsu100 schema).
     """
+
+    model_config = ConfigDict(
+        extra="allow",
+        str_strip_whitespace=True,
+        populate_by_name=True,
+    )
 
     name: str
     version: str
